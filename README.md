@@ -338,9 +338,11 @@ I'm not totally sure how I feel about this vs `mustComplete`. It does have the a
 
 What haven't we accomplished?
 
-The biggest thing is that the signal needs to be threaded through everything. It would be nice to avoid this, but any such mechanism would be a much bigger change to the language, so I'm setting that aside.
+The most obvious thing is that the signal needs to be threaded through everything. It would be nice to avoid this, but any such mechanism would be a much bigger change to the language, so I'm setting that aside.
 
 Also, we are in the awkward state where `.throwIfAborted()` triggers `catch` handlers, which generally must re-throw the exception. In ye olden days there was much discussion of having a mechanism to bypass `catch` handlers and trigger `finally` directly, much like the `.return()` method on generators does (which Effection uses), but we were unable to come to a consensus there and I don't think re-visiting that would be productive. So we will need to tell people to call `signal.throwIfAborted()` at the top of their `catch` handlers. Swift survives this mostly by having pattern-matched catch blocks, which [we could conceivably someday get](https://github.com/tc39/proposal-pattern-matching).
+
+Finally, the fact that cancelation uses what you might call an "in-band" signalling mechanism means that there's no obvious way for libraries (including the standard library) to handle generic cancelation, even for tasks they initiate, unless they constrain the signatures of functions they're calling. For example, a [concurrent `AsyncIterator.prototype.map`](https://github.com/tc39/proposal-async-iterator-helpers?tab=readme-ov-file#concurrency) is invoking a generic async mapping function; it would be nice if closing the iterator early (with `.return`) could cancel the tasks created by invoking said function, but there is no obvious way to do this unless the iterator internally creates an `AbortController` and passes its `signal` to the mapping functions.
 
 ## Talk to me
 
