@@ -332,7 +332,31 @@ try {
 
 without needing the `mustComplete` helper (since the helper would automatically wait for all the original Promises to settle).
 
+This is inadequate if there's other possible early exits from the block, since the controller does not know about the tasks until they're passed to `controller.all`.
+
 I'm not totally sure how I feel about this vs `mustComplete`. It does have the advantage of not strictly requiring the ability to wait for async `abort` callbacks, if it proves to be infeasible to add that.
+
+## Alternative: `controller.wrap(promise)`
+
+The `controller.all` helper has the downside that it cannot know to wait for a Promise unless that Promise is passed to `controller.all`, so it's easy to accidentally fail to wait if you're doing anything nontrivial. We could instead have a `controller.wrap(promise)` which acts as the identity except that it adds the passed Promise to the list of values which must settle before the Promise returned from `.abort()` settles:
+
+```js
+try {
+  await using controller = new AbortController.AsyncDisposable();
+  const { signal } = controller;
+
+  const userP   = controller.wrap(fetchUser(userId, { signal }));
+  const ordersP = controller.wrap(fetchOrders(userId, { signal }));
+  const recsP   = controller.wrap(fetchRecommendations(userId, { signal }));
+
+  const [ user, orders, recs ] = await Promise.all([ userP, ordersP, recsP ]);
+  return `user=${user}, orders=${orders}, recs=${recs}`;
+} catch (e) {
+  return 'error: failed to load';
+}
+```
+
+This adds even more boilerplate at the caller but does avoid any additional boilerplate in callees, like the `controller.all` option above.
 
 ## Downsides
 
