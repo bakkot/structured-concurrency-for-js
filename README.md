@@ -1,4 +1,4 @@
-# Structured concurrency for JavaScript
+# Adding structured concurrency to JavaScript
 
 This repository exists for me and anyone else interested to explore directions for adding [structured concurrency](https://sustrik.github.io/250bpm/blog:71/) to JavaScript.
 
@@ -280,7 +280,35 @@ async function fetchUser(userId, { signal }) {
 
 Then we have only a single line of boilerplate in the function.
 
+
+## Alternative: `controller.wrap(promise)`
+
+Instead of requiring functions to register themselves with `signal.mustComplete()`, we could have a `controller.wrap(promise)` which acts as the identity except that it adds the passed Promise to the list of values which must settle before the Promise returned from `.abort()` settles:
+
+```js
+try {
+  await using controller = new AbortController.AsyncDisposable();
+  const { signal } = controller;
+
+  const userP   = controller.wrap(fetchUser(userId, { signal }));
+  const ordersP = controller.wrap(fetchOrders(userId, { signal }));
+  const recsP   = controller.wrap(fetchRecommendations(userId, { signal }));
+
+  const [ user, orders, recs ] = await Promise.all([ userP, ordersP, recsP ]);
+  return `user=${user}, orders=${orders}, recs=${recs}`;
+} catch (e) {
+  return 'error: failed to load';
+}
+```
+
+This adds even more boilerplate at the caller but does avoid any additional boilerplate in callees.
+
 ## Alternative: `controller.all(promises)`
+
+I no longer consider this idea good and so have hidden it. I got feedback (which I agree with) that people already have trouble internalizing the usage of the Promise combinators, and adding slight variations of all of them would make that situation worse.
+
+<details>
+<summary>click to show</summary>
 
 The design above leaves the controller responsible only for cancellation, with task coalescing still done with the usual Promise combinators like `Promise.all`. That works, and I think is my preferred route; it's the simplest design. But it does require the `signal.mustComplete()` boilerplate in callees, which is unfortunate. Another option would be to introduce an `AbortController` version of `Promise.all` which, instead of returning eagerly at the first exception, would instead perform cancellation and continue to wait for the outstanding Promises, and only then throw that exception. Like this:
 
@@ -334,29 +362,8 @@ without needing the `mustComplete` helper (since the helper would automatically 
 
 This is inadequate if there's other possible early exits from the block, since the controller does not know about the tasks until they're passed to `controller.all`.
 
-I'm not totally sure how I feel about this vs `mustComplete`. It does have the advantage of not strictly requiring the ability to wait for async `abort` callbacks, if it proves to be infeasible to add that.
-
-## Alternative: `controller.wrap(promise)`
-
-The `controller.all` helper has the downside that it cannot know to wait for a Promise unless that Promise is passed to `controller.all`, so it's easy to accidentally fail to wait if you're doing anything nontrivial. We could instead have a `controller.wrap(promise)` which acts as the identity except that it adds the passed Promise to the list of values which must settle before the Promise returned from `.abort()` settles:
-
-```js
-try {
-  await using controller = new AbortController.AsyncDisposable();
-  const { signal } = controller;
-
-  const userP   = controller.wrap(fetchUser(userId, { signal }));
-  const ordersP = controller.wrap(fetchOrders(userId, { signal }));
-  const recsP   = controller.wrap(fetchRecommendations(userId, { signal }));
-
-  const [ user, orders, recs ] = await Promise.all([ userP, ordersP, recsP ]);
-  return `user=${user}, orders=${orders}, recs=${recs}`;
-} catch (e) {
-  return 'error: failed to load';
-}
-```
-
-This adds even more boilerplate at the caller but does avoid any additional boilerplate in callees, like the `controller.all` option above.
+This does have the advantage of not strictly requiring the ability to wait for async `abort` callbacks, if it proves to be infeasible to add that.
+</details>
 
 ## Downsides
 
